@@ -7,6 +7,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# .NET (C#) build artifacts
+src-dotnet/bin/
+src-dotnet/obj/
+src-dotnet/.vs/
+
 node_modules
 dist
 dist-ssr
