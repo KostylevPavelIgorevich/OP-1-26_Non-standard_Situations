@@ -67,7 +67,7 @@ public sealed class NetDiscoveryService : IDisposable
             _remoteTcpPort = null;
             _thisHostIp = GetPrimaryLanIPv4();
             _runCts = new CancellationTokenSource();
-            var token = _runCts.Token;
+            CancellationToken token = _runCts.Token;
             _runTask = Task.Run(() => HostLoopAsync(token), token);
             _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs);
         }
@@ -84,7 +84,7 @@ public sealed class NetDiscoveryService : IDisposable
             _remoteTcpPort = null;
             _thisHostIp = GetPrimaryLanIPv4();
             _runCts = new CancellationTokenSource();
-            var token = _runCts.Token;
+            CancellationToken token = _runCts.Token;
             _runTask = Task.Run(() => ClientDiscoverAsync(token), token);
             _log.LogInformation("Net: client discovery, timeout {Ms} ms", _opt.DiscoveryTimeoutMs);
         }
@@ -128,10 +128,10 @@ public sealed class NetDiscoveryService : IDisposable
 
     private async Task HostLoopAsync(CancellationToken token)
     {
-        using var udp = new UdpClient();
+        using UdpClient udp = new UdpClient();
         udp.EnableBroadcast = true;
 
-        var beacon = new BeaconMessage
+        BeaconMessage beacon = new BeaconMessage
         {
             App = _opt.AppId,
             Role = "host",
@@ -143,12 +143,12 @@ public sealed class NetDiscoveryService : IDisposable
         {
             try
             {
-                var bytes = JsonSerializer.SerializeToUtf8Bytes(beacon, JsonOpts);
-                var dest = new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort);
+                byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(beacon, JsonOpts);
+                IPEndPoint dest = new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort);
                 await udp.SendAsync(bytes, bytes.Length, dest)
                     .WaitAsync(token)
                     .ConfigureAwait(false);
-                var loopback = new IPEndPoint(IPAddress.Loopback, _opt.UdpPort);
+                IPEndPoint loopback = new IPEndPoint(IPAddress.Loopback, _opt.UdpPort);
                 await udp.SendAsync(bytes, bytes.Length, loopback)
                     .WaitAsync(token)
                     .ConfigureAwait(false);
@@ -175,9 +175,10 @@ public sealed class NetDiscoveryService : IDisposable
 
     private async Task ClientDiscoverAsync(CancellationToken token)
     {
-        using var udp = new UdpClient(_opt.UdpPort);
-        using var timeout = new CancellationTokenSource(_opt.DiscoveryTimeoutMs);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
+        using UdpClient udp = new UdpClient(_opt.UdpPort);
+        using CancellationTokenSource timeout = new CancellationTokenSource(_opt.DiscoveryTimeoutMs);
+        using CancellationTokenSource linked =
+            CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
 
         try
         {
@@ -213,7 +214,7 @@ public sealed class NetDiscoveryService : IDisposable
                 if (msg.Tcp <= 0)
                     continue;
 
-                var hostIp = incoming.RemoteEndPoint.Address.ToString();
+                string hostIp = incoming.RemoteEndPoint.Address.ToString();
                 lock (_gate)
                 {
                     _state = NetDiscoveryState.ClientConnected;
@@ -244,8 +245,8 @@ public sealed class NetDiscoveryService : IDisposable
     {
         try
         {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (var a in host.AddressList)
+            IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (IPAddress a in host.AddressList)
             {
                 if (a.AddressFamily != AddressFamily.InterNetwork)
                     continue;
