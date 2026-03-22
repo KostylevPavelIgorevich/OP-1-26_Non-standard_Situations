@@ -59,34 +59,38 @@ public sealed class NetDiscoveryService : IDisposable
     /// <summary>Режим хоста: периодический UDP beacon.</summary>
     public void StartHost()
     {
-        lock (_gate)
-        {
-            StopUnsafe();
-            _state = NetDiscoveryState.HostBeaconing;
-            _remoteHostIp = null;
-            _remoteTcpPort = null;
-            _thisHostIp = GetPrimaryLanIPv4();
-            _runCts = new CancellationTokenSource();
-            CancellationToken token = _runCts.Token;
-            _runTask = Task.Run(() => HostLoopAsync(token), token);
-            _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs);
-        }
+        StartDiscovery(
+            NetDiscoveryState.HostBeaconing,
+            HostLoopAsync,
+            () => _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs));
     }
 
     /// <summary>Режим клиента: поиск хоста по UDP, иначе local_only.</summary>
     public void StartClient()
     {
+        StartDiscovery(
+            NetDiscoveryState.ClientDiscovering,
+            ClientDiscoverAsync,
+            () => _log.LogInformation("Net: client discovery, timeout {Ms} ms", _opt.DiscoveryTimeoutMs));
+    }
+
+    /// <summary>Общий запуск фонового цикла: сброс, состояние, CTS, Task.Run.</summary>
+    private void StartDiscovery(
+        NetDiscoveryState initialState,
+        Func<CancellationToken, Task> loopTaskFactory,
+        Action logAction)
+    {
         lock (_gate)
         {
             StopUnsafe();
-            _state = NetDiscoveryState.ClientDiscovering;
+            _state = initialState;
             _remoteHostIp = null;
             _remoteTcpPort = null;
             _thisHostIp = GetPrimaryLanIPv4();
             _runCts = new CancellationTokenSource();
             CancellationToken token = _runCts.Token;
-            _runTask = Task.Run(() => ClientDiscoverAsync(token), token);
-            _log.LogInformation("Net: client discovery, timeout {Ms} ms", _opt.DiscoveryTimeoutMs);
+            _runTask = Task.Run(() => loopTaskFactory(token), token);
+            logAction();
         }
     }
 
