@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace Backend.Net;
 
-/// <summary>Сервис UDP discovery: хост рассылает beacon, клиент ищет хост или переходит в <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
+/// <summary>UDP discovery: хост — beacon, клиент — поиск хоста или <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
 public sealed class NetDiscoveryService : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -26,14 +26,14 @@ public sealed class NetDiscoveryService : IDisposable
     private int? _remoteTcpPort;
     private string? _thisHostIp;
 
-    /// <summary>Создаёт сервис с настройками из <see cref="DiscoveryOptions"/>.</summary>
+    /// <summary>Настройки из <see cref="IOptions{T}"/>.</summary>
     public NetDiscoveryService(IOptions<DiscoveryOptions> options, ILogger<NetDiscoveryService> log)
     {
         _opt = options.Value;
         _log = log;
     }
 
-    /// <summary>Возвращает снимок состояния для HTTP API.</summary>
+    /// <summary>Снимок для <c>GET /api/net/status</c>.</summary>
     public NetStatusDto GetStatus()
     {
         lock (_gate)
@@ -51,7 +51,7 @@ public sealed class NetDiscoveryService : IDisposable
         }
     }
 
-    /// <summary>Запускает режим хоста: периодическая отправка UDP beacon.</summary>
+    /// <summary>Режим хоста: периодический UDP beacon.</summary>
     public void StartHost()
     {
         StartDiscovery(
@@ -60,7 +60,7 @@ public sealed class NetDiscoveryService : IDisposable
             () => _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs));
     }
 
-    /// <summary>Запускает режим клиента: ожидание beacon до таймаута, иначе <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
+    /// <summary>Режим клиента: поиск до таймаута, иначе <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
     public void StartClient()
     {
         StartDiscovery(
@@ -69,7 +69,7 @@ public sealed class NetDiscoveryService : IDisposable
             () => _log.LogInformation("Net: client discovery, timeout {Ms} ms", _opt.DiscoveryTimeoutMs));
     }
 
-    /// <summary>Останавливает фоновую задачу и сбрасывает состояние в <see cref="NetDiscoveryState.Idle"/>.</summary>
+    /// <summary>Стоп фоновой задачи, состояние <see cref="NetDiscoveryState.Idle"/>.</summary>
     public void Stop()
     {
         lock (_gate)
@@ -80,10 +80,6 @@ public sealed class NetDiscoveryService : IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public void Dispose() => Stop();
-
-    /// <summary>Общий сценарий старта: отмена предыдущего цикла, новое состояние, <see cref="Task.Run"/> фоновой задачи.</summary>
     private void StartDiscovery(
         NetDiscoveryState initialState,
         Func<CancellationToken, Task> loopTaskFactory,
@@ -102,14 +98,12 @@ public sealed class NetDiscoveryService : IDisposable
         }
     }
 
-    /// <summary>Обнуляет адрес и порт удалённого хоста (без смены <see cref="_state"/>).</summary>
     private void ClearRemotePeer()
     {
         _remoteHostIp = null;
         _remoteTcpPort = null;
     }
 
-    /// <summary>Формирует <c>http://ip:port</c> для найденного хоста или <c>null</c>.</summary>
     private string? BuildRemoteBaseUrl()
     {
         if (string.IsNullOrEmpty(_remoteHostIp) || _remoteTcpPort is null or <= 0)
@@ -117,7 +111,6 @@ public sealed class NetDiscoveryService : IDisposable
         return $"http://{_remoteHostIp}:{_remoteTcpPort}";
     }
 
-    /// <summary>Отменяет CTS, ждёт завершения фоновой задачи, освобождает ресурсы (вызывать под lock или когда гонки нет).</summary>
     private void StopUnsafe()
     {
         try
@@ -143,7 +136,6 @@ public sealed class NetDiscoveryService : IDisposable
         _runTask = null;
     }
 
-    /// <summary>Beacon для поля <see cref="BeaconMessage.Role"/> = host.</summary>
     private BeaconMessage CreateHostBeaconMessage() =>
         new BeaconMessage
         {
@@ -153,20 +145,14 @@ public sealed class NetDiscoveryService : IDisposable
             V = _opt.ProtocolVersion,
         };
 
-    /// <summary>Отправка payload в broadcast и на loopback (локальный тест на одной машине).</summary>
     private async Task SendBeaconUdpAsync(UdpClient udp, byte[] payload, CancellationToken token)
     {
-        await udp
-            .SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort))
-            .WaitAsync(token)
-            .ConfigureAwait(false);
-        await udp
-            .SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, _opt.UdpPort))
-            .WaitAsync(token)
-            .ConfigureAwait(false);
+        await udp.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort))
+            .WaitAsync(token).ConfigureAwait(false);
+        await udp.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, _opt.UdpPort))
+            .WaitAsync(token).ConfigureAwait(false);
     }
 
-    /// <summary>Цикл хоста: beacon → пауза; при ошибке отправки — лог и пауза, затем повтор.</summary>
     private async Task HostLoopAsync(CancellationToken token)
     {
         using UdpClient udp = new UdpClient();
@@ -199,7 +185,6 @@ public sealed class NetDiscoveryService : IDisposable
         }
     }
 
-    /// <summary>Проверяет beacon на соответствие <see cref="DiscoveryOptions"/> и роли host.</summary>
     private bool IsValidHostBeacon(BeaconMessage? msg) =>
         msg is not null
         && msg.V == _opt.ProtocolVersion
@@ -207,7 +192,6 @@ public sealed class NetDiscoveryService : IDisposable
         && string.Equals(msg.Role, "host", StringComparison.OrdinalIgnoreCase)
         && msg.Tcp > 0;
 
-    /// <summary>Цикл клиента: приём UDP до таймаута; успех → <see cref="NetDiscoveryState.ClientConnected"/>; иначе → <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
     private async Task ClientDiscoverAsync(CancellationToken token)
     {
         using UdpClient udp = new UdpClient(_opt.UdpPort);
@@ -270,7 +254,6 @@ public sealed class NetDiscoveryService : IDisposable
         }
     }
 
-    /// <summary>Первый подходящий IPv4 LAN (не loopback, не APIPA) для отображения.</summary>
     private string? GetPrimaryLanIPv4()
     {
         try
@@ -291,9 +274,11 @@ public sealed class NetDiscoveryService : IDisposable
         return null;
     }
 
-    /// <summary>Пригоден ли адрес для отображения как «основной» LAN IPv4.</summary>
     private static bool IsUsableLanIPv4(IPAddress a) =>
         a.AddressFamily == AddressFamily.InterNetwork
         && !IPAddress.IsLoopback(a)
         && !a.ToString().StartsWith("169.254.", StringComparison.Ordinal);
+
+    /// <inheritdoc />
+    public void Dispose() => Stop();
 }
