@@ -18,18 +18,3 @@ public enum NetDiscoveryState
     /// <summary>Клиент: хост не найден за таймаут (graceful degradation).</summary>
     ClientLocalOnly,
 }
-
-public static class NetDiscoveryStateExtensions
-{
-    /// <summary>Строка для JSON API (camelCase).</summary>
-    public static string ToApiString(this NetDiscoveryState s) =>
-        s switch
-        {
-            NetDiscoveryState.Idle => "idle",
-            NetDiscoveryState.HostBeaconing => "hostBeaconing",
-            NetDiscoveryState.ClientDiscovering => "clientDiscovering",
-            NetDiscoveryState.ClientConnected => "clientConnected",
-            NetDiscoveryState.ClientLocalOnly => "clientLocalOnly",
-            _ => "idle",
-        };
-}

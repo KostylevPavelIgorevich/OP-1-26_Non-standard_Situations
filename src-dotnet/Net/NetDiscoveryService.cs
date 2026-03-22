@@ -37,14 +37,15 @@ public sealed class NetDiscoveryService : IDisposable
         lock (_gate)
         {
             return new NetStatusDto(
-                State: _state.ToApiString(),
+                State: _state,
                 ThisHostIp: _thisHostIp,
                 RemoteHostIp: _remoteHostIp,
                 RemoteTcpPort: _remoteTcpPort,
                 RemoteHostBaseUrl: BuildRemoteBaseUrl(),
                 LanPort: _opt.LanPort,
                 UdpPort: _opt.UdpPort,
-                AppId: _opt.AppId);
+                AppId: _opt.AppId
+            );
         }
     }
 
@@ -144,10 +145,13 @@ public sealed class NetDiscoveryService : IDisposable
             {
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(beacon, JsonOpts);
                 var dest = new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort);
-                await udp.SendAsync(bytes, bytes.Length, dest).WaitAsync(token).ConfigureAwait(false);
-                // На одной машине broadcast часто не доходит до своего же слушателя — дублируем на loopback.
+                await udp.SendAsync(bytes, bytes.Length, dest)
+                    .WaitAsync(token)
+                    .ConfigureAwait(false);
                 var loopback = new IPEndPoint(IPAddress.Loopback, _opt.UdpPort);
-                await udp.SendAsync(bytes, bytes.Length, loopback).WaitAsync(token).ConfigureAwait(false);
+                await udp.SendAsync(bytes, bytes.Length, loopback)
+                    .WaitAsync(token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
