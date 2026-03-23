@@ -57,7 +57,8 @@ public sealed class NetDiscoveryService : IDisposable
         StartDiscovery(
             NetDiscoveryState.HostBeaconing,
             HostLoopAsync,
-            () => _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs));
+            () => _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs)
+        );
     }
 
     /// <summary>Режим клиента: поиск до таймаута, иначе <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
@@ -66,7 +67,12 @@ public sealed class NetDiscoveryService : IDisposable
         StartDiscovery(
             NetDiscoveryState.ClientDiscovering,
             ClientDiscoverAsync,
-            () => _log.LogInformation("Net: client discovery, timeout {Ms} ms", _opt.DiscoveryTimeoutMs));
+            () =>
+                _log.LogInformation(
+                    "Net: client discovery, timeout {Ms} ms",
+                    _opt.DiscoveryTimeoutMs
+                )
+        );
     }
 
     /// <summary>Стоп фоновой задачи, состояние <see cref="NetDiscoveryState.Idle"/>.</summary>
@@ -83,7 +89,8 @@ public sealed class NetDiscoveryService : IDisposable
     private void StartDiscovery(
         NetDiscoveryState initialState,
         Func<CancellationToken, Task> loopTaskFactory,
-        Action logAction)
+        Action logAction
+    )
     {
         lock (_gate)
         {
@@ -147,10 +154,20 @@ public sealed class NetDiscoveryService : IDisposable
 
     private async Task SendBeaconUdpAsync(UdpClient udp, byte[] payload, CancellationToken token)
     {
-        await udp.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort))
-            .WaitAsync(token).ConfigureAwait(false);
-        await udp.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, _opt.UdpPort))
-            .WaitAsync(token).ConfigureAwait(false);
+        await udp.SendAsync(
+                payload,
+                payload.Length,
+                new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort)
+            )
+            .WaitAsync(token)
+            .ConfigureAwait(false);
+        await udp.SendAsync(
+                payload,
+                payload.Length,
+                new IPEndPoint(IPAddress.Loopback, _opt.UdpPort)
+            )
+            .WaitAsync(token)
+            .ConfigureAwait(false);
     }
 
     private async Task HostLoopAsync(CancellationToken token)
@@ -195,9 +212,13 @@ public sealed class NetDiscoveryService : IDisposable
     private async Task ClientDiscoverAsync(CancellationToken token)
     {
         using UdpClient udp = new UdpClient(_opt.UdpPort);
-        using CancellationTokenSource timeout = new CancellationTokenSource(_opt.DiscoveryTimeoutMs);
-        using CancellationTokenSource linked =
-            CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
+        using CancellationTokenSource timeout = new CancellationTokenSource(
+            _opt.DiscoveryTimeoutMs
+        );
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            token,
+            timeout.Token
+        );
 
         try
         {
