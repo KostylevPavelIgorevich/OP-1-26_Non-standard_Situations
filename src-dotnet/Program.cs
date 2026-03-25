@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Net;
@@ -26,6 +28,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<DiscoveryOptions>(builder.Configuration.GetSection(DiscoveryOptions.SectionName));
 builder.Services.AddSingleton<NetDiscoveryService>();
+builder
+    .Services.AddHttpClient("hostProxy")
+    .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        AutomaticDecompression = DecompressionMethods.None,
+    });
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -43,6 +53,7 @@ builder.Services.AddCors(o =>
 
 var app = builder.Build();
 app.UseCors();
+app.UseMiddleware<ClientHostProxyMiddleware>();
 
 app.MapGet(
     "/greet",

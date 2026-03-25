@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
@@ -116,6 +117,24 @@ public sealed class NetDiscoveryService : IDisposable
         if (string.IsNullOrEmpty(_remoteHostIp) || _remoteTcpPort is null or <= 0)
             return null;
         return $"http://{_remoteHostIp}:{_remoteTcpPort}";
+    }
+
+    /// <summary>
+    /// Базовый URL LAN-хоста для проксирования HTTP (только <see cref="NetDiscoveryState.ClientConnected"/>).
+    /// </summary>
+    public bool TryGetHostProxyBaseUrl([NotNullWhen(true)] out string? baseUrl)
+    {
+        lock (_gate)
+        {
+            if (_state != NetDiscoveryState.ClientConnected)
+            {
+                baseUrl = null;
+                return false;
+            }
+
+            baseUrl = BuildRemoteBaseUrl();
+            return !string.IsNullOrEmpty(baseUrl);
+        }
     }
 
     private void StopUnsafe()
