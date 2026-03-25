@@ -6,9 +6,12 @@ namespace Backend.Udp;
 
 public sealed class UdpDiscoveryService : IHostedService, IDisposable
 {
-    public static Action<DiscoveredServer>? ServerDiscovered;
-    public static Action<DiscoveredServer>? ServerLost;
-    public static string? LastDiscoveredServerIp = string.Empty;
+    private readonly string _serviceName;
+
+    public event Action<DiscoveredServer>? ServerDiscovered;
+    public event Action<DiscoveredServer>? ServerLost;
+
+    public string? LastDiscoveredServerIp { get; private set; } = string.Empty;
 
     private readonly ServerDiscoveryService _serverDiscoveryService;
 
@@ -17,6 +20,7 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
 
     public UdpDiscoveryService(IOptions<DiscoveryOptions> options)
     {
+        _serviceName = options.Value.AppId;
         _serverDiscoveryService = new ServerDiscoveryService(
             discoveryPort: (ushort)options.Value.UdpPort
         );
@@ -42,6 +46,17 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
         {
             _cancellationTokenSource.Cancel();
 
+            // В UdpDiscovery.Net остановка discovery делается через ClearDiscoveredServers().
+            // Иначе Task из StartDiscovery() может не завершиться.
+            try
+            {
+                _serverDiscoveryService.ClearDiscoveredServers();
+            }
+            catch
+            {
+                // best-effort
+            }
+
             if (_discoveryTask is not null)
             {
                 await _discoveryTask.WaitAsync(cancellationToken);
@@ -56,12 +71,18 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
     {
         _serverDiscoveryService.OnServerDiscovered += (server) =>
         {
+            if (!string.Equals(server.Name, _serviceName, StringComparison.Ordinal))
+                return;
+
             LastDiscoveredServerIp = server.IpAddress.ToString();
             ServerDiscovered?.Invoke(server);
         };
 
         _serverDiscoveryService.OnServerDisappeared += (server) =>
         {
+            if (!string.Equals(server.Name, _serviceName, StringComparison.Ordinal))
+                return;
+
             ServerLost?.Invoke(server);
         };
 
@@ -70,6 +91,24 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
 
     public void Dispose()
     {
+        try
+        {
+            _serverDiscoveryService.ClearDiscoveredServers();
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        try
+        {
+            _serverDiscoveryService.Dispose();
+        }
+        catch
+        {
+            // best-effort
+        }
+
         _cancellationTokenSource?.Dispose();
     }
 }

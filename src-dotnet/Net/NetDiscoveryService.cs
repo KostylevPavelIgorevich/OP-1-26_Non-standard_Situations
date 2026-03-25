@@ -2,7 +2,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using Backend.Udp;
 using Microsoft.Extensions.Options;
+using UdpDiscovery.Net;
 
 namespace Backend.Net;
 
@@ -16,11 +18,15 @@ public sealed class NetDiscoveryService : IDisposable
     };
 
     private readonly DiscoveryOptions _opt;
+    private readonly IOptions<DiscoveryOptions> _options;
     private readonly ILogger<NetDiscoveryService> _log;
     private readonly object _gate = new();
 
     private CancellationTokenSource? _runCts;
     private Task? _runTask;
+
+    private ApiUdpAnnouncer? _hostAnnouncer;
+    private UdpDiscoveryService? _clientDiscovery;
 
     private NetDiscoveryState _state = NetDiscoveryState.Idle;
     private string? _remoteHostIp;
@@ -31,6 +37,7 @@ public sealed class NetDiscoveryService : IDisposable
     public NetDiscoveryService(IOptions<DiscoveryOptions> options, ILogger<NetDiscoveryService> log)
     {
         _opt = options.Value;
+        _options = options;
         _log = log;
     }
 
@@ -56,25 +63,105 @@ public sealed class NetDiscoveryService : IDisposable
     /// <summary>Режим хоста: периодический UDP beacon.</summary>
     public void StartHost()
     {
-        StartDiscovery(
-            NetDiscoveryState.HostBeaconing,
-            HostLoopAsync,
-            () => _log.LogInformation("Net: host mode, beacon every {Ms} ms", _opt.BeaconIntervalMs)
-        );
+        lock (_gate)
+        {
+            StopUnsafe();
+
+            _state = NetDiscoveryState.HostBeaconing;
+            ClearRemotePeer();
+            _thisHostIp = GetPrimaryLanIPv4();
+
+            _runCts = new CancellationTokenSource();
+            CancellationToken token = _runCts.Token;
+
+            _hostAnnouncer = new ApiUdpAnnouncer(_options);
+            _hostAnnouncer.StartAsync(token).GetAwaiter().GetResult();
+
+            // Нужен фоновый Task, чтобы `StopUnsafe` мог дождаться завершения.
+            _runTask = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Ожидаемо: остановка роли.
+                    }
+                },
+                token
+            );
+
+            _log.LogInformation("Net: host mode, UDP announcement started ({AppId})", _opt.AppId);
+        }
     }
 
     /// <summary>Режим клиента: поиск до таймаута, иначе <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
     public void StartClient()
     {
-        StartDiscovery(
-            NetDiscoveryState.ClientDiscovering,
-            ClientDiscoverAsync,
-            () =>
-                _log.LogInformation(
-                    "Net: client discovery, timeout {Ms} ms",
-                    _opt.DiscoveryTimeoutMs
-                )
-        );
+        lock (_gate)
+        {
+            StopUnsafe();
+
+            _state = NetDiscoveryState.ClientDiscovering;
+            ClearRemotePeer();
+            _thisHostIp = GetPrimaryLanIPv4();
+
+            _runCts = new CancellationTokenSource();
+            CancellationToken token = _runCts.Token;
+
+            UdpDiscoveryService discovery = new(_options);
+            _clientDiscovery = discovery;
+
+            var tcs = new TaskCompletionSource<DiscoveredServer>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            discovery.ServerDiscovered += server => tcs.TrySetResult(server);
+
+            _runTask = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await discovery.StartAsync(token).ConfigureAwait(false);
+
+                        // Слушаем до первого сообщения от хоста.
+                        DiscoveredServer server = await tcs.Task.WaitAsync(token).ConfigureAwait(false);
+
+                        lock (_gate)
+                        {
+                            _state = NetDiscoveryState.ClientConnected;
+                            _remoteHostIp = server.IpAddress.ToString();
+                            // В текущей архитектуре проксирование идет на LAN порт (config), а не на порт из UDP.
+                            _remoteTcpPort = _opt.LanPort;
+                        }
+
+                        _log.LogInformation(
+                            "Net: host found at {Host}:{Tcp} ({AppId})",
+                            server.IpAddress,
+                            _opt.LanPort,
+                            _opt.AppId
+                        );
+
+                        // После первого сообщения слушание прекращаем.
+                        await discovery.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Ожидаемо: остановка приложения/роли.
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(ex, "Net: client discovery error");
+                    }
+                },
+                token
+            );
+
+            _log.LogInformation("Net: client mode, listening UDP until host found ({AppId})", _opt.AppId);
+        }
     }
 
     /// <summary>Стоп фоновой задачи, состояние <see cref="NetDiscoveryState.Idle"/>.</summary>
@@ -140,6 +227,9 @@ public sealed class NetDiscoveryService : IDisposable
 
     private void StopUnsafe()
     {
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        CancellationToken stopToken = stopCts.Token;
+
         try
         {
             _runCts?.Cancel();
@@ -156,6 +246,34 @@ public sealed class NetDiscoveryService : IDisposable
         catch (Exception ex)
         {
             _log.LogDebug(ex, "Net: background task wait on shutdown");
+        }
+
+        try
+        {
+            _hostAnnouncer?.StopAsync(stopToken).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // ignore: best-effort shutdown
+        }
+        finally
+        {
+            _hostAnnouncer?.Dispose();
+            _hostAnnouncer = null;
+        }
+
+        try
+        {
+            _clientDiscovery?.StopAsync(stopToken).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // ignore: best-effort shutdown
+        }
+        finally
+        {
+            _clientDiscovery?.Dispose();
+            _clientDiscovery = null;
         }
 
         _runCts?.Dispose();

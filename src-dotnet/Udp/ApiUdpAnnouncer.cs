@@ -1,4 +1,3 @@
-using System.Reflection;
 using Backend.Net;
 using Microsoft.Extensions.Options;
 
@@ -12,7 +11,8 @@ public class ApiUdpAnnouncer : IDisposable
 
     public ApiUdpAnnouncer(IOptions<DiscoveryOptions> options)
     {
-        string serviceName = Assembly.GetEntryAssembly()?.GetName().Name ?? "API";
+        // Идентификатор сервиса из appsettings — чтобы клиент фильтровал “чужие” объявления.
+        string serviceName = options.Value.AppId;
         _udpBroadcaster = new UdpDiscovery.Net.UdpDiscovery(
             serviceName: serviceName,
             discoveryPort: (ushort)options.Value.UdpPort
