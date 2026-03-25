@@ -2,15 +2,24 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Net;
 
-static int ParseLocalPort(string[] args)
+static string ResolveLocalHttpUrl(string[] args)
 {
-    for (var i = 0; i < args.Length - 1; i++)
+    foreach (var key in new[] { "BACKEND_HTTP_BASE_URL", "LOCAL_HTTP_BASE" })
     {
-        if (args[i] == "--urls")
-            return new Uri(args[i + 1]).Port;
+        var v = Environment.GetEnvironmentVariable(key)?.Trim();
+        if (!string.IsNullOrEmpty(v)
+            && Uri.TryCreate(v, UriKind.Absolute, out var u)
+            && u.Scheme == Uri.UriSchemeHttp)
+            return $"{u.Scheme}://{u.Authority}";
     }
 
-    return 5000;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--urls" && Uri.TryCreate(args[i + 1], UriKind.Absolute, out var au))
+            return $"{au.Scheme}://{au.Authority}";
+    }
+
+    return "http://127.0.0.1:5000";
 }
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,9 +32,9 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 });
 
-var localPort = ParseLocalPort(args);
+var localHttpUrl = ResolveLocalHttpUrl(args);
 var lanPort = builder.Configuration.GetValue("Net:LanPort", 17891);
-builder.WebHost.UseUrls($"http://127.0.0.1:{localPort}", $"http://0.0.0.0:{lanPort}");
+builder.WebHost.UseUrls(localHttpUrl, $"http://0.0.0.0:{lanPort}");
 
 builder.Services.AddCors(o =>
 {
