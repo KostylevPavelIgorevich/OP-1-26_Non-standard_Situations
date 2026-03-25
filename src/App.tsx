@@ -36,6 +36,7 @@ export default function App() {
   const [configuredRole, setConfiguredRole] = useState<NetConfiguredRole | null>(null);
   const [net, setNet] = useState<NetStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     void invoke<string>("get_backend_base_url").then(setBaseUrl).catch((e) => {
@@ -70,6 +71,19 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [baseUrl, fetchStatus]);
 
+  async function refreshPageInfo() {
+    if (!baseUrl) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      await Promise.all([fetchRole(), fetchStatus()]);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <main className="container">
       <h1>Сеть: хост / клиент</h1>
@@ -78,7 +92,17 @@ export default function App() {
       {error && <p className="error">{error}</p>}
 
       <section className="card">
-        <h2>Режим из конфигурации</h2>
+        <div className="row card-header-row">
+          <h2>Режим из конфигурации</h2>
+          <button
+            type="button"
+            className="btn-refresh"
+            disabled={!baseUrl || refreshing}
+            onClick={() => void refreshPageInfo()}
+          >
+            {refreshing ? "Обновление…" : "Обновить"}
+          </button>
+        </div>
         {configuredRole == null ? (
           <p className="muted">Запрос /api/net/role…</p>
         ) : (
