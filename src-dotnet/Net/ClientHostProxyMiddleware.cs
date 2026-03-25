@@ -73,7 +73,8 @@ public sealed class ClientHostProxyMiddleware
         {
             _log.LogWarning(ex, "Proxy to host {Base} failed", remoteBase);
             context.Response.StatusCode = StatusCodes.Status502BadGateway;
-            await context.Response.WriteAsync("Bad gateway: host unreachable.", context.RequestAborted)
+            await context
+                .Response.WriteAsync("Bad gateway: host unreachable.", context.RequestAborted)
                 .ConfigureAwait(false);
         }
     }
@@ -141,14 +142,12 @@ public sealed class ClientHostProxyMiddleware
         if (upstream.Content is { } body)
         {
             CopySafeResponseHeaders(body.Headers, context.Response.Headers);
-            await body.CopyToAsync(context.Response.Body, context.RequestAborted).ConfigureAwait(false);
+            await body.CopyToAsync(context.Response.Body, context.RequestAborted)
+                .ConfigureAwait(false);
         }
     }
 
-    private static void CopySafeResponseHeaders(
-        HttpHeaders from,
-        IHeaderDictionary to
-    )
+    private static void CopySafeResponseHeaders(HttpHeaders from, IHeaderDictionary to)
     {
         foreach (var header in from)
         {

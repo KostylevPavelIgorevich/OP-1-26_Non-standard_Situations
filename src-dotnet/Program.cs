@@ -10,9 +10,11 @@ static string ResolveLocalHttpUrl(string[] args)
     foreach (var key in new[] { "BACKEND_HTTP_BASE_URL", "LOCAL_HTTP_BASE" })
     {
         var v = Environment.GetEnvironmentVariable(key)?.Trim();
-        if (!string.IsNullOrEmpty(v)
+        if (
+            !string.IsNullOrEmpty(v)
             && Uri.TryCreate(v, UriKind.Absolute, out var u)
-            && u.Scheme == Uri.UriSchemeHttp)
+            && u.Scheme == Uri.UriSchemeHttp
+        )
             return $"{u.Scheme}://{u.Authority}";
     }
 
@@ -27,17 +29,21 @@ static string ResolveLocalHttpUrl(string[] args)
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<DiscoveryOptions>(builder.Configuration.GetSection(DiscoveryOptions.SectionName));
+builder.Services.Configure<DiscoveryOptions>(
+    builder.Configuration.GetSection(DiscoveryOptions.SectionName)
+);
 builder.Services.AddSingleton<NetDiscoveryService>();
 builder.Services.AddHostedService<NetDiscoveryHostedService>();
 builder
     .Services.AddHttpClient("hostProxy")
-    .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        AutomaticDecompression = DecompressionMethods.None,
-    });
+    .ConfigurePrimaryHttpMessageHandler(static () =>
+        new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            UseCookies = false,
+            AutomaticDecompression = DecompressionMethods.None,
+        }
+    );
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -72,7 +78,8 @@ app.MapGet("/api/net/status", (NetDiscoveryService net) => Results.Json(net.GetS
 
 app.MapGet(
     "/api/net/role",
-    (IOptions<DiscoveryOptions> opt) => Results.Json(new { role = NetRoleApi.Format(opt.Value.ParsedRole) })
+    (IOptions<DiscoveryOptions> opt) =>
+        Results.Json(new { role = NetRoleApi.Format(opt.Value.ParsedRole) })
 );
 
 app.Run();
