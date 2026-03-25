@@ -83,11 +83,9 @@ public sealed class ClientHostProxyMiddleware
     {
         if (path.StartsWithSegments("/health"))
             return true;
-        if (path.StartsWithSegments("/api/net/start"))
-            return true;
-        if (path.StartsWithSegments("/api/net/stop"))
-            return true;
         if (path.StartsWithSegments("/api/net/status"))
+            return true;
+        if (path.StartsWithSegments("/api/net/role"))
             return true;
         return false;
     }

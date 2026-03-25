@@ -1,6 +1,7 @@
 namespace Backend.Net;
 
 public sealed record NetStatusDto(
+    string ConfiguredRole,
     NetDiscoveryState State,
     string? ThisHostIp,
     string? RemoteHostIp,

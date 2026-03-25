@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
+type NetConfiguredRole = "none" | "host" | "client";
+
+type NetRoleResponse = {
+  role: NetConfiguredRole;
+};
+
 type NetStatus = {
+  configuredRole: NetConfiguredRole;
   state: string;
   thisHostIp: string | null;
   remoteHostIp: string | null;
@@ -13,17 +20,36 @@ type NetStatus = {
   appId: string;
 };
 
+function roleLabel(role: NetConfiguredRole): string {
+  switch (role) {
+    case "host":
+      return "хост (beacon из appsettings)";
+    case "client":
+      return "клиент (поиск хоста из appsettings)";
+    default:
+      return "выкл. (Role: none в appsettings)";
+  }
+}
+
 export default function App() {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [configuredRole, setConfiguredRole] = useState<NetConfiguredRole | null>(null);
   const [net, setNet] = useState<NetStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void invoke<string>("get_backend_base_url").then(setBaseUrl).catch((e) => {
       setError(String(e));
     });
   }, []);
+
+  const fetchRole = useCallback(async () => {
+    if (!baseUrl) return;
+    const r = await fetch(`${baseUrl}/api/net/role`);
+    if (!r.ok) throw new Error(`role ${r.status}`);
+    const data = (await r.json()) as NetRoleResponse;
+    setConfiguredRole(data.role);
+  }, [baseUrl]);
 
   const fetchStatus = useCallback(async () => {
     if (!baseUrl) return;
@@ -34,47 +60,15 @@ export default function App() {
 
   useEffect(() => {
     if (!baseUrl) return;
+    void fetchRole().catch((e) => setError(String(e)));
+  }, [baseUrl, fetchRole]);
+
+  useEffect(() => {
+    if (!baseUrl) return;
     void fetchStatus();
     const id = window.setInterval(() => void fetchStatus().catch(() => {}), 1000);
     return () => window.clearInterval(id);
   }, [baseUrl, fetchStatus]);
-
-  async function startMode(mode: "host" | "client") {
-    if (!baseUrl) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fetch(`${baseUrl}/api/net/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        throw new Error(t || `HTTP ${r.status}`);
-      }
-      setNet((await r.json()) as NetStatus);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function stopNet() {
-    if (!baseUrl) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await fetch(`${baseUrl}/api/net/stop`, { method: "POST" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setNet((await r.json()) as NetStatus);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <main className="container">
@@ -84,27 +78,28 @@ export default function App() {
       {error && <p className="error">{error}</p>}
 
       <section className="card">
-        <h2>Режим</h2>
-        <div className="row">
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void startMode("host")}>
-            Хост (UDP beacon)
-          </button>
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void startMode("client")}>
-            Клиент (поиск хоста)
-          </button>
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void stopNet()}>
-            Стоп
-          </button>
-        </div>
-        <p className="hint">
-          Клиент ~5 с ищет хост по UDP; если не найден — <strong>clientLocalOnly</strong> (локально на этом ПК).
-        </p>
+        <h2>Режим из конфигурации</h2>
+        {configuredRole == null ? (
+          <p className="muted">Запрос /api/net/role…</p>
+        ) : (
+          <>
+            <p>
+              <strong>{roleLabel(configuredRole)}</strong>
+            </p>
+            <p className="hint">
+              Меняется только в <code>appsettings.json</code> → <code>Net:Role</code> (<code>none</code>,{" "}
+              <code>host</code>, <code>client</code>), затем перезапуск процесса backend.
+            </p>
+          </>
+        )}
       </section>
 
       {net && (
         <section className="card status">
-          <h2>Статус</h2>
+          <h2>Статус discovery</h2>
           <dl>
+            <dt>configuredRole (из конфига)</dt>
+            <dd>{net.configuredRole}</dd>
             <dt>state</dt>
             <dd>{net.state}</dd>
             <dt>thisHostIp</dt>

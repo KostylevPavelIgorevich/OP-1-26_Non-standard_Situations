@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Net;
+using Microsoft.Extensions.Options;
 
 static string ResolveLocalHttpUrl(string[] args)
 {
@@ -28,6 +29,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<DiscoveryOptions>(builder.Configuration.GetSection(DiscoveryOptions.SectionName));
 builder.Services.AddSingleton<NetDiscoveryService>();
+builder.Services.AddHostedService<NetDiscoveryHostedService>();
 builder
     .Services.AddHttpClient("hostProxy")
     .ConfigurePrimaryHttpMessageHandler(static () => new SocketsHttpHandler
@@ -68,43 +70,9 @@ app.MapGet("/health", () => Results.Text("OK"));
 
 app.MapGet("/api/net/status", (NetDiscoveryService net) => Results.Json(net.GetStatus()));
 
-app.MapPost(
-    "/api/net/start",
-    (StartNetRequest req, NetDiscoveryService net) =>
-    {
-        var mode = req.Mode?.Trim().ToLowerInvariant();
-        return mode switch
-        {
-            "host" => Results.Json(net.StartHostAndGetStatus()),
-            "client" => Results.Json(net.StartClientAndGetStatus()),
-            _ => Results.BadRequest(new { error = "mode must be \"host\" or \"client\"" }),
-        };
-    });
-
-app.MapPost(
-    "/api/net/stop",
-    (NetDiscoveryService net) =>
-    {
-        net.Stop();
-        return Results.Json(net.GetStatus());
-    });
+app.MapGet(
+    "/api/net/role",
+    (IOptions<DiscoveryOptions> opt) => Results.Json(new { role = NetRoleApi.Format(opt.Value.ParsedRole) })
+);
 
 app.Run();
-
-internal sealed record StartNetRequest([property: JsonPropertyName("mode")] string? Mode);
-
-internal static class NetDiscoveryServiceExtensions
-{
-    /// <summary>Сразу отдать статус; клиентский поиск идёт в фоне — опрашивайте GET /api/net/status.</summary>
-    public static NetStatusDto StartClientAndGetStatus(this NetDiscoveryService net)
-    {
-        net.StartClient();
-        return net.GetStatus();
-    }
-
-    public static NetStatusDto StartHostAndGetStatus(this NetDiscoveryService net)
-    {
-        net.StartHost();
-        return net.GetStatus();
-    }
-}

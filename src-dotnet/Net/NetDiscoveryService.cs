@@ -40,6 +40,7 @@ public sealed class NetDiscoveryService : IDisposable
         lock (_gate)
         {
             return new NetStatusDto(
+                ConfiguredRole: NetRoleApi.Format(_opt.ParsedRole),
                 State: _state,
                 ThisHostIp: _thisHostIp,
                 RemoteHostIp: _remoteHostIp,
