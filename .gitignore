@@ -24,10 +24,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-.vscode/*
-!.vscode/extensions.json
-!.vscode/launch.json
-!.vscode/tasks.json
 .idea
 .DS_Store
 *.suo
