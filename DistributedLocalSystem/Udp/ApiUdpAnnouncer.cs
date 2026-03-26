@@ -11,7 +11,6 @@ public class ApiUdpAnnouncer : IDisposable
 
     public ApiUdpAnnouncer(IOptions<DiscoveryOptions> options)
     {
-        // Идентификатор сервиса из appsettings — чтобы клиент фильтровал “чужие” объявления.
         string serviceName = options.Value.AppId;
         _udpBroadcaster = new UdpDiscovery.Net.UdpDiscovery(
             serviceName: serviceName,

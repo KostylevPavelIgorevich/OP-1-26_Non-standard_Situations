@@ -38,7 +38,6 @@ public static class DistributedLocalSystemCoreExtensions
                 }
             );
 
-        // Чтобы UI получал enum'ы строками (camelCase), как раньше в Backend/Program.cs
         services.ConfigureHttpJsonOptions(o =>
         {
             o.SerializerOptions.Converters.Add(

@@ -57,7 +57,6 @@ public sealed class ClientHostProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context, NetDiscoveryService net)
     {
-        // Служебные endpoints: всегда отвечаем локально (и не отдаём прокси).
         if (context.Request.Path.StartsWithSegments("/api/net/status"))
         {
             NetStatusDto status = net.GetStatus();
@@ -282,10 +281,7 @@ public sealed class ClientHostProxyMiddleware
             {
                 to.Append(header.Key, header.Value.ToArray());
             }
-            catch
-            {
-                /* запрещённые для ответа Kestrel имена — пропускаем */
-            }
+            catch { }
         }
     }
 

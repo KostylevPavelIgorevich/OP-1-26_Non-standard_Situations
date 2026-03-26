@@ -94,10 +94,7 @@ public sealed class NetDiscoveryService : IDisposable
                     {
                         await Task.Delay(Timeout.InfiniteTimeSpan, token).ConfigureAwait(false);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        // Ожидаемо: остановка роли.
-                    }
+                    catch (OperationCanceledException) { }
                 },
                 token
             );
@@ -112,7 +109,9 @@ public sealed class NetDiscoveryService : IDisposable
     private bool DetectExistingHostBeforeBeaconStart()
     {
         using UdpDiscoveryService probe = new(_options);
-        using CancellationTokenSource timeoutCts = new(TimeSpan.FromMilliseconds(_opt.DiscoveryTimeoutMs));
+        using CancellationTokenSource timeoutCts = new(
+            TimeSpan.FromMilliseconds(_opt.DiscoveryTimeoutMs)
+        );
 
         TaskCompletionSource<DiscoveredServer> tcs = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -122,7 +121,10 @@ public sealed class NetDiscoveryService : IDisposable
         try
         {
             probe.StartAsync(timeoutCts.Token).GetAwaiter().GetResult();
-            DiscoveredServer discovered = tcs.Task.WaitAsync(timeoutCts.Token).GetAwaiter().GetResult();
+            DiscoveredServer discovered = tcs
+                .Task.WaitAsync(timeoutCts.Token)
+                .GetAwaiter()
+                .GetResult();
             _log.LogInformation(
                 "Net: existing host detected before host startup at {Host}:{Tcp} ({AppId})",
                 discovered.IpAddress,
@@ -133,12 +135,10 @@ public sealed class NetDiscoveryService : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // За время probe хост не найден — можно безопасно стартовать как host.
             return false;
         }
         catch (Exception ex)
         {
-            // Fail-open: при ошибке probe не блокируем запуск host.
             _log.LogWarning(ex, "Net: host preflight discovery failed, continuing host startup");
             return false;
         }
@@ -148,10 +148,7 @@ public sealed class NetDiscoveryService : IDisposable
             {
                 probe.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
             }
-            catch
-            {
-                // best-effort stop
-            }
+            catch { }
         }
     }
 
@@ -185,7 +182,6 @@ public sealed class NetDiscoveryService : IDisposable
                     {
                         await discovery.StartAsync(token).ConfigureAwait(false);
 
-                        // Слушаем до первого сообщения от хоста.
                         DiscoveredServer server = await tcs
                             .Task.WaitAsync(token)
                             .ConfigureAwait(false);
@@ -194,7 +190,6 @@ public sealed class NetDiscoveryService : IDisposable
                         {
                             _state = NetDiscoveryState.ClientConnected;
                             _remoteHostIp = server.IpAddress.ToString();
-                            // В текущей архитектуре проксирование идет на LAN порт (config), а не на порт из UDP.
                             _remoteTcpPort = _opt.LanPort;
                         }
 
@@ -205,13 +200,9 @@ public sealed class NetDiscoveryService : IDisposable
                             _opt.AppId
                         );
 
-                        // После первого сообщения слушание прекращаем.
                         await discovery.StopAsync(CancellationToken.None).ConfigureAwait(false);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        // Ожидаемо: остановка приложения/роли.
-                    }
+                    catch (OperationCanceledException) { }
                     catch (Exception ex)
                     {
                         _log.LogWarning(ex, "Net: client discovery error");
@@ -311,10 +302,7 @@ public sealed class NetDiscoveryService : IDisposable
         {
             _hostAnnouncer?.StopAsync(stopToken).GetAwaiter().GetResult();
         }
-        catch
-        {
-            // ignore: best-effort shutdown
-        }
+        catch { }
         finally
         {
             _hostAnnouncer?.Dispose();
@@ -325,10 +313,7 @@ public sealed class NetDiscoveryService : IDisposable
         {
             _clientDiscovery?.StopAsync(stopToken).GetAwaiter().GetResult();
         }
-        catch
-        {
-            // ignore: best-effort shutdown
-        }
+        catch { }
         finally
         {
             _clientDiscovery?.Dispose();

@@ -46,16 +46,11 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
         {
             _cancellationTokenSource.Cancel();
 
-            // В UdpDiscovery.Net остановка discovery делается через ClearDiscoveredServers().
-            // Иначе Task из StartDiscovery() может не завершиться.
             try
             {
                 _serverDiscoveryService.ClearDiscoveredServers();
             }
-            catch
-            {
-                // best-effort
-            }
+            catch { }
 
             if (_discoveryTask is not null)
             {
@@ -95,19 +90,13 @@ public sealed class UdpDiscoveryService : IHostedService, IDisposable
         {
             _serverDiscoveryService.ClearDiscoveredServers();
         }
-        catch
-        {
-            // best-effort
-        }
+        catch { }
 
         try
         {
             _serverDiscoveryService.Dispose();
         }
-        catch
-        {
-            // best-effort
-        }
+        catch { }
 
         _cancellationTokenSource?.Dispose();
     }
