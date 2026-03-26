@@ -26,6 +26,7 @@ static string ResolveLocalHttpUrl(string[] args)
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDistributedLocalSystemCore(builder.Configuration);
+builder.Services.AddControllers();
 
 string localHttpUrl = ResolveLocalHttpUrl(args);
 int lanPort = builder.Configuration.GetValue("Net:LanPort", 17891);
@@ -39,6 +40,8 @@ builder.Services.AddCors(o =>
 WebApplication app = builder.Build();
 app.UseCors();
 app.UseDistributedLocalSystemCoreProxy();
+
+app.MapControllers();
 
 app.MapGet(
     "/greet",
