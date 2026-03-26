@@ -1,4 +1,4 @@
-namespace DistributedLocalSystem.Core.Net;
+namespace DistributedLocalSystem.Core.Discovery;
 
 public sealed record NetStatusDto(
     string ConfiguredRole,

@@ -1,4 +1,4 @@
-using DistributedLocalSystem.Core.Net;
+using DistributedLocalSystem.Core.Discovery;
 using Microsoft.Extensions.Options;
 
 namespace DistributedLocalSystem.Core.Udp;

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace DistributedLocalSystem.Core.Net;
+namespace DistributedLocalSystem.Core.Discovery;
 
 /// <summary>Старт/стоп discovery по <see cref="DiscoveryOptions.Role"/> из конфигурации.</summary>
 public sealed class NetDiscoveryHostedService : IHostedService

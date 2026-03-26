@@ -6,7 +6,7 @@ using DistributedLocalSystem.Core.Udp;
 using Microsoft.Extensions.Options;
 using UdpDiscovery.Net;
 
-namespace DistributedLocalSystem.Core.Net;
+namespace DistributedLocalSystem.Core.Discovery;
 
 /// <summary>UDP discovery: хост — beacon, клиент — поиск хоста или <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
 public sealed class NetDiscoveryService : IDisposable

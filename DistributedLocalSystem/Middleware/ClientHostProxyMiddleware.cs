@@ -3,11 +3,12 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using DistributedLocalSystem.Core.Discovery;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace DistributedLocalSystem.Core.Net;
+namespace DistributedLocalSystem.Core.Middleware;
 
 /// <summary>
 /// В режиме клиента с найденным хостом пересылает HTTP на LAN-хост, кроме служебных путей (health, net API).
