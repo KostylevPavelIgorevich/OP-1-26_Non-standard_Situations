@@ -113,7 +113,7 @@ public sealed class NetDiscoveryService : IDisposable
             UdpDiscoveryService discovery = new(_options);
             _clientDiscovery = discovery;
 
-            var tcs = new TaskCompletionSource<DiscoveredServer>(
+            TaskCompletionSource<DiscoveredServer> tcs = new(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
 
@@ -212,7 +212,7 @@ public sealed class NetDiscoveryService : IDisposable
 
     private void StopUnsafe()
     {
-        using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using CancellationTokenSource stopCts = new(TimeSpan.FromSeconds(2));
         CancellationToken stopToken = stopCts.Token;
 
         try

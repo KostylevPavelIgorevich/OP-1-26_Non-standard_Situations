@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Primitives;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 
@@ -55,9 +57,9 @@ public sealed class ClientHostProxyMiddleware
         // Служебные endpoints: всегда отвечаем локально (и не отдаём прокси).
         if (context.Request.Path.StartsWithSegments("/api/net/status"))
         {
-            var status = net.GetStatus();
+            NetStatusDto status = net.GetStatus();
             context.Response.ContentType = "application/json";
-            var jsonOptions = context
+            JsonSerializerOptions jsonOptions = context
                 .RequestServices.GetRequiredService<IOptions<JsonOptions>>()
                 .Value.SerializerOptions;
 
@@ -69,9 +71,9 @@ public sealed class ClientHostProxyMiddleware
 
         if (context.Request.Path.StartsWithSegments("/api/net/role"))
         {
-            var status = net.GetStatus();
+            NetStatusDto status = net.GetStatus();
             context.Response.ContentType = "application/json";
-            var jsonOptions = context
+            JsonSerializerOptions jsonOptions = context
                 .RequestServices.GetRequiredService<IOptions<JsonOptions>>()
                 .Value.SerializerOptions;
 
@@ -126,23 +128,23 @@ public sealed class ClientHostProxyMiddleware
 
     private static Uri BuildTargetUri(HttpRequest request, string remoteBase)
     {
-        var relative = (request.Path + request.QueryString).ToString();
+        string relative = (request.Path + request.QueryString).ToString();
         if (string.IsNullOrEmpty(relative))
             relative = "/";
-        var baseWithSlash = remoteBase.EndsWith('/') ? remoteBase : remoteBase + "/";
+        string baseWithSlash = remoteBase.EndsWith('/') ? remoteBase : remoteBase + "/";
         return new Uri(new Uri(baseWithSlash, UriKind.Absolute), relative);
     }
 
     private async Task ForwardAsync(HttpContext context, string remoteBase)
     {
-        var target = BuildTargetUri(context.Request, remoteBase);
-        using var requestMessage = new HttpRequestMessage(
+        Uri target = BuildTargetUri(context.Request, remoteBase);
+        using HttpRequestMessage requestMessage = new(
             new HttpMethod(context.Request.Method),
             target
         );
 
-        var hasBody = RequestMayHaveBody(context.Request);
-        foreach (var header in context.Request.Headers)
+        bool hasBody = RequestMayHaveBody(context.Request);
+        foreach (KeyValuePair<string, StringValues> header in context.Request.Headers)
         {
             if (HopByHopRequestHeaders.Contains(header.Key))
                 continue;
@@ -152,14 +154,14 @@ public sealed class ClientHostProxyMiddleware
 
         if (hasBody)
         {
-            var streamContent = new StreamContent(context.Request.Body);
-            var contentType = context.Request.ContentType;
+            StreamContent streamContent = new(context.Request.Body);
+            string? contentType = context.Request.ContentType;
             if (!string.IsNullOrEmpty(contentType))
                 streamContent.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
             requestMessage.Content = streamContent;
         }
 
-        var client = _httpClientFactory.CreateClient("hostProxy");
+        HttpClient client = _httpClientFactory.CreateClient("hostProxy");
         using HttpResponseMessage upstream = await client
             .SendAsync(
                 requestMessage,
@@ -182,7 +184,7 @@ public sealed class ClientHostProxyMiddleware
 
     private static void CopySafeResponseHeaders(HttpHeaders from, IHeaderDictionary to)
     {
-        foreach (var header in from)
+        foreach (KeyValuePair<string, IEnumerable<string>> header in from)
         {
             if (HopByHopResponseHeaders.Contains(header.Key))
                 continue;
