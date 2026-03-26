@@ -70,12 +70,11 @@ public sealed class NetDiscoveryService : IDisposable
             bool hostAlreadyExists = DetectExistingHostBeforeBeaconStart();
             if (hostAlreadyExists)
             {
-                _log.LogWarning(
-                    "Net: another host already detected in LAN; switching to client mode ({AppId})",
-                    _opt.AppId
-                );
-                StartClient();
-                return;
+                string error =
+                    $"Net: another host is already running in LAN for AppId '{_opt.AppId}'. "
+                    + "This instance cannot start in host mode.";
+                _log.LogError(error);
+                throw new InvalidOperationException(error);
             }
 
             _state = NetDiscoveryState.HostBeaconing;
