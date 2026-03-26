@@ -67,6 +67,17 @@ public sealed class NetDiscoveryService : IDisposable
         {
             StopUnsafe();
 
+            bool hostAlreadyExists = DetectExistingHostBeforeBeaconStart();
+            if (hostAlreadyExists)
+            {
+                _log.LogWarning(
+                    "Net: another host already detected in LAN; switching to client mode ({AppId})",
+                    _opt.AppId
+                );
+                StartClient();
+                return;
+            }
+
             _state = NetDiscoveryState.HostBeaconing;
             ClearRemotePeer();
             _thisHostIp = GetPrimaryLanIPv4();
@@ -93,6 +104,55 @@ public sealed class NetDiscoveryService : IDisposable
             );
 
             _log.LogInformation("Net: host mode, UDP announcement started ({AppId})", _opt.AppId);
+        }
+    }
+
+    /// <summary>
+    /// Перед запуском beacon в режиме host проверяем, нет ли уже существующего хоста в локальной сети.
+    /// </summary>
+    private bool DetectExistingHostBeforeBeaconStart()
+    {
+        using UdpDiscoveryService probe = new(_options);
+        using CancellationTokenSource timeoutCts = new(TimeSpan.FromMilliseconds(_opt.DiscoveryTimeoutMs));
+
+        TaskCompletionSource<DiscoveredServer> tcs = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        probe.ServerDiscovered += server => tcs.TrySetResult(server);
+
+        try
+        {
+            probe.StartAsync(timeoutCts.Token).GetAwaiter().GetResult();
+            DiscoveredServer discovered = tcs.Task.WaitAsync(timeoutCts.Token).GetAwaiter().GetResult();
+            _log.LogInformation(
+                "Net: existing host detected before host startup at {Host}:{Tcp} ({AppId})",
+                discovered.IpAddress,
+                _opt.LanPort,
+                _opt.AppId
+            );
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // За время probe хост не найден — можно безопасно стартовать как host.
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Fail-open: при ошибке probe не блокируем запуск host.
+            _log.LogWarning(ex, "Net: host preflight discovery failed, continuing host startup");
+            return false;
+        }
+        finally
+        {
+            try
+            {
+                probe.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // best-effort stop
+            }
         }
     }
 
