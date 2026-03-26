@@ -27,6 +27,7 @@ public static class DistributedLocalSystemCoreExtensions
 
         services
             .AddHttpClient("hostProxy")
+            .ConfigureHttpClient(static c => c.Timeout = TimeSpan.FromSeconds(5))
             .ConfigurePrimaryHttpMessageHandler(static () =>
                 new SocketsHttpHandler
                 {

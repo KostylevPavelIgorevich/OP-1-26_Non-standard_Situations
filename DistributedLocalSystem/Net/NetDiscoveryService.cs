@@ -187,6 +187,21 @@ public sealed class NetDiscoveryService : IDisposable
     }
 
     /// <summary>
+    /// Удалённый хост не ответил на проверку <c>/health</c> после сбоя прокси — сброс связи и снова UDP discovery (только режим client).
+    /// </summary>
+    public void RestartClientDiscoveryAfterRemoteHostFailure()
+    {
+        if (_opt.ParsedRole != NetConfiguredRole.Client)
+            return;
+
+        _log.LogWarning(
+            "Net: remote host considered dead; restarting UDP discovery ({AppId})",
+            _opt.AppId
+        );
+        StartClient();
+    }
+
+    /// <summary>
     /// Базовый URL LAN-хоста для проксирования HTTP (только <see cref="NetDiscoveryState.ClientConnected"/>).
     /// </summary>
     public bool TryGetHostProxyBaseUrl([NotNullWhen(true)] out string? baseUrl)

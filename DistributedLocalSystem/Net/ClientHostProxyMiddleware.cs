@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Primitives;
@@ -102,7 +104,7 @@ public sealed class ClientHostProxyMiddleware
 
         try
         {
-            await ForwardAsync(context, remoteBase).ConfigureAwait(false);
+            await ForwardAsync(context, remoteBase, net).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -135,7 +137,7 @@ public sealed class ClientHostProxyMiddleware
         return new Uri(new Uri(baseWithSlash, UriKind.Absolute), relative);
     }
 
-    private async Task ForwardAsync(HttpContext context, string remoteBase)
+    private async Task ForwardAsync(HttpContext context, string remoteBase, NetDiscoveryService net)
     {
         Uri target = BuildTargetUri(context.Request, remoteBase);
         using HttpRequestMessage requestMessage = new(
@@ -162,24 +164,105 @@ public sealed class ClientHostProxyMiddleware
         }
 
         HttpClient client = _httpClientFactory.CreateClient("hostProxy");
-        using HttpResponseMessage upstream = await client
-            .SendAsync(
-                requestMessage,
-                HttpCompletionOption.ResponseHeadersRead,
-                context.RequestAborted
-            )
-            .ConfigureAwait(false);
 
-        context.Response.StatusCode = (int)upstream.StatusCode;
-
-        CopySafeResponseHeaders(upstream.Headers, context.Response.Headers);
-
-        if (upstream.Content is { } body)
+        HttpResponseMessage upstream;
+        try
         {
-            CopySafeResponseHeaders(body.Headers, context.Response.Headers);
-            await body.CopyToAsync(context.Response.Body, context.RequestAborted)
+            upstream = await client
+                .SendAsync(
+                    requestMessage,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    context.RequestAborted
+                )
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException ex)
+        {
+            await OnProxyTransportFailureAsync(context, remoteBase, net, ex).ConfigureAwait(false);
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            await OnProxyTransportFailureAsync(context, remoteBase, net, ex).ConfigureAwait(false);
+            throw;
+        }
+        catch (IOException ex)
+        {
+            await OnProxyTransportFailureAsync(context, remoteBase, net, ex).ConfigureAwait(false);
+            throw;
+        }
+
+        using (upstream)
+        {
+            context.Response.StatusCode = (int)upstream.StatusCode;
+
+            CopySafeResponseHeaders(upstream.Headers, context.Response.Headers);
+
+            if (upstream.Content is { } body)
+            {
+                CopySafeResponseHeaders(body.Headers, context.Response.Headers);
+                await body.CopyToAsync(context.Response.Body, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// После таймаута 5 с или обрыва соединения — проверка <c>/health</c> у удалённого хоста; при отсутствии ответа — перезапуск UDP discovery.
+    /// </summary>
+    private async Task OnProxyTransportFailureAsync(
+        HttpContext context,
+        string remoteBase,
+        NetDiscoveryService net,
+        Exception inner
+    )
+    {
+        if (context.RequestAborted.IsCancellationRequested)
+            return;
+
+        bool healthOk = await TryRemoteHealthAsync(remoteBase, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (!healthOk)
+        {
+            _log.LogWarning(inner, "Net: proxy failed and remote /health unreachable; restarting UDP");
+            net.RestartClientDiscoveryAfterRemoteHostFailure();
+        }
+        else
+        {
+            _log.LogWarning(inner, "Net: proxy failed but remote /health OK");
+        }
+    }
+
+    private async Task<bool> TryRemoteHealthAsync(string remoteBase, CancellationToken cancellationToken)
+    {
+        HttpClient client = _httpClientFactory.CreateClient("hostProxy");
+        Uri healthUri = BuildHealthUri(remoteBase);
+        try
+        {
+            using HttpRequestMessage req = new(HttpMethod.Get, healthUri);
+            using HttpResponseMessage r = await client
+                .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            return r.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static Uri BuildHealthUri(string remoteBase)
+    {
+        string trimmed = remoteBase.TrimEnd('/');
+        return new Uri($"{trimmed}/health");
     }
 
     private static void CopySafeResponseHeaders(HttpHeaders from, IHeaderDictionary to)
