@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="UdpDiscovery.Net" Version="1.2.0" />
+  </ItemGroup>
+  <!--
+    Структура каталогов:
+    DependencyInjection/ — вход в библиотеку (AddDistributedLocalSystemCore, UseDistributedLocalSystemCoreProxy)
+    Discovery/         — UDP discovery, опции, DTO, статусы, NetDiscoveryService / HostedService
+    Middleware/        — ClientHostProxyMiddleware
+    Udp/               — обёртки UdpDiscovery.Net (клиент/хост)
+    GlobalUsings.cs   — общие глобальные using для class library
+  -->
+</Project>

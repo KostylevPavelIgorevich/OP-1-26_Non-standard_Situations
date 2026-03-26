@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Backend.Net;
+namespace DistributedLocalSystem.Core.Discovery;
 
 /// <summary>UDP beacon (JSON, UTF-8).</summary>
 public sealed class BeaconMessage

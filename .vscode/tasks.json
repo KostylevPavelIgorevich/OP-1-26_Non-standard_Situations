@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "publish local backend",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "publish",
+        "${workspaceFolder}/src-dotnet/Backend.csproj",
+        "-c",
+        "Debug",
+        "-o",
+        "${workspaceFolder}/bin/local-backend",
+        "--verbosity",
+        "minimal",
+        "--nologo"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    }
+  ]
+}

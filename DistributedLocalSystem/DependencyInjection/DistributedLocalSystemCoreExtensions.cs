@@ -1,0 +1,57 @@
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using DistributedLocalSystem.Core.Discovery;
+using DistributedLocalSystem.Core.Middleware;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace DistributedLocalSystem.Core;
+
+public static class DistributedLocalSystemCoreExtensions
+{
+    public static IServiceCollection AddDistributedLocalSystemCore(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        services.Configure<DiscoveryOptions>(
+            configuration.GetSection(DiscoveryOptions.SectionName)
+        );
+
+        services.AddSingleton<NetDiscoveryService>();
+        services.AddHostedService<NetDiscoveryHostedService>();
+
+        services
+            .AddHttpClient("hostProxy")
+            .ConfigureHttpClient(static c => c.Timeout = TimeSpan.FromSeconds(5))
+            .ConfigurePrimaryHttpMessageHandler(static () =>
+                new SocketsHttpHandler
+                {
+                    AllowAutoRedirect = false,
+                    UseCookies = false,
+                    AutomaticDecompression = DecompressionMethods.None,
+                }
+            );
+
+        services.ConfigureHttpJsonOptions(o =>
+        {
+            o.SerializerOptions.Converters.Add(
+                new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+            );
+        });
+
+        return services;
+    }
+
+    public static IApplicationBuilder UseDistributedLocalSystemCoreProxy(
+        this IApplicationBuilder app
+    )
+    {
+        return app.UseMiddleware<ClientHostProxyMiddleware>();
+    }
+}

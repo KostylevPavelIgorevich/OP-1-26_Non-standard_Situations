@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
+type NetConfiguredRole = "none" | "host" | "client";
+
+type NetRoleResponse = {
+  role: NetConfiguredRole;
+};
+
 type NetStatus = {
+  configuredRole: NetConfiguredRole;
   state: string;
   thisHostIp: string | null;
   remoteHostIp: string | null;
@@ -13,17 +20,47 @@ type NetStatus = {
   appId: string;
 };
 
+type Book = {
+  id: number;
+  title: string;
+  author: string;
+  yearPublished: number;
+};
+
+function roleLabel(role: NetConfiguredRole): string {
+  switch (role) {
+    case "host":
+      return "хост (beacon из appsettings)";
+    case "client":
+      return "клиент (поиск хоста из appsettings)";
+    default:
+      return "выкл. (Role: none в appsettings)";
+  }
+}
+
 export default function App() {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [configuredRole, setConfiguredRole] = useState<NetConfiguredRole | null>(null);
   const [net, setNet] = useState<NetStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [books, setBooks] = useState<Book[] | null>(null);
+  const [booksLoading, setBooksLoading] = useState(false);
+  const [booksError, setBooksError] = useState<string | null>(null);
 
   useEffect(() => {
     void invoke<string>("get_backend_base_url").then(setBaseUrl).catch((e) => {
       setError(String(e));
     });
   }, []);
+
+  const fetchRole = useCallback(async () => {
+    if (!baseUrl) return;
+    const r = await fetch(`${baseUrl}/api/net/role`);
+    if (!r.ok) throw new Error(`role ${r.status}`);
+    const data = (await r.json()) as NetRoleResponse;
+    setConfiguredRole(data.role);
+  }, [baseUrl]);
 
   const fetchStatus = useCallback(async () => {
     if (!baseUrl) return;
@@ -34,45 +71,43 @@ export default function App() {
 
   useEffect(() => {
     if (!baseUrl) return;
+    void fetchRole().catch((e) => setError(String(e)));
+  }, [baseUrl, fetchRole]);
+
+  useEffect(() => {
+    if (!baseUrl) return;
     void fetchStatus();
     const id = window.setInterval(() => void fetchStatus().catch(() => {}), 1000);
     return () => window.clearInterval(id);
   }, [baseUrl, fetchStatus]);
 
-  async function startMode(mode: "host" | "client") {
+  async function refreshPageInfo() {
     if (!baseUrl) return;
-    setBusy(true);
+    setRefreshing(true);
     setError(null);
     try {
-      const r = await fetch(`${baseUrl}/api/net/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        throw new Error(t || `HTTP ${r.status}`);
-      }
-      setNet((await r.json()) as NetStatus);
+      await Promise.all([fetchRole(), fetchStatus()]);
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      setRefreshing(false);
     }
   }
 
-  async function stopNet() {
+  async function fetchBooks() {
     if (!baseUrl) return;
-    setBusy(true);
-    setError(null);
+    setBooksLoading(true);
+    setBooksError(null);
     try {
-      const r = await fetch(`${baseUrl}/api/net/stop`, { method: "POST" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setNet((await r.json()) as NetStatus);
+      const r = await fetch(`${baseUrl}/api/Books`);
+      if (!r.ok) throw new Error(`книги: HTTP ${r.status}`);
+      const data = (await r.json()) as Book[];
+      setBooks(data);
     } catch (e) {
-      setError(String(e));
+      setBooksError(String(e));
+      setBooks(null);
     } finally {
-      setBusy(false);
+      setBooksLoading(false);
     }
   }
 
@@ -84,27 +119,79 @@ export default function App() {
       {error && <p className="error">{error}</p>}
 
       <section className="card">
-        <h2>Режим</h2>
-        <div className="row">
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void startMode("host")}>
-            Хост (UDP beacon)
-          </button>
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void startMode("client")}>
-            Клиент (поиск хоста)
-          </button>
-          <button type="button" disabled={!baseUrl || busy} onClick={() => void stopNet()}>
-            Стоп
+        <div className="row card-header-row">
+          <h2>Режим из конфигурации</h2>
+          <button
+            type="button"
+            className="btn-refresh"
+            disabled={!baseUrl || refreshing}
+            onClick={() => void refreshPageInfo()}
+          >
+            {refreshing ? "Обновление…" : "Обновить"}
           </button>
         </div>
-        <p className="hint">
-          Клиент ~5 с ищет хост по UDP; если не найден — <strong>clientLocalOnly</strong> (локально на этом ПК).
-        </p>
+        {configuredRole == null ? (
+          <p className="muted">Запрос /api/net/role…</p>
+        ) : (
+          <>
+            <p>
+              <strong>{roleLabel(configuredRole)}</strong>
+            </p>
+            <p className="hint">
+              Меняется только в <code>appsettings.json</code> → <code>Net:Role</code> (<code>none</code>,{" "}
+              <code>host</code>, <code>client</code>), затем перезапуск процесса backend.
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="row card-header-row">
+          <h2>Тест API: книги</h2>
+          <button
+            type="button"
+            className="btn-refresh"
+            disabled={!baseUrl || booksLoading}
+            onClick={() => void fetchBooks()}
+          >
+            {booksLoading ? "Загрузка…" : "Получить книги"}
+          </button>
+        </div>
+        {booksError && <p className="error">{booksError}</p>}
+        {books === null && !booksError && (
+          <p className="muted">Нажмите кнопку, чтобы запросить <code>GET /api/Books</code>.</p>
+        )}
+        {books && books.length > 0 && (
+          <table className="books-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Название</th>
+                <th>Автор</th>
+                <th>Год</th>
+              </tr>
+            </thead>
+            <tbody>
+              {books.map((b) => (
+                <tr key={b.id}>
+                  <td>{b.id}</td>
+                  <td>{b.title}</td>
+                  <td>{b.author}</td>
+                  <td>{b.yearPublished}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {books && books.length === 0 && <p className="muted">Список пуст.</p>}
       </section>
 
       {net && (
         <section className="card status">
-          <h2>Статус</h2>
+          <h2>Статус discovery</h2>
           <dl>
+            <dt>configuredRole (из конфига)</dt>
+            <dd>{net.configuredRole}</dd>
             <dt>state</dt>
             <dd>{net.state}</dd>
             <dt>thisHostIp</dt>
