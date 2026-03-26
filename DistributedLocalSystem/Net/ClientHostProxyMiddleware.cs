@@ -3,9 +3,9 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using Microsoft.Extensions.Primitives;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace DistributedLocalSystem.Core.Net;
 
@@ -228,7 +228,10 @@ public sealed class ClientHostProxyMiddleware
             .ConfigureAwait(false);
         if (!healthOk)
         {
-            _log.LogWarning(inner, "Net: proxy failed and remote /health unreachable; restarting UDP");
+            _log.LogWarning(
+                inner,
+                "Net: proxy failed and remote /health unreachable; restarting UDP"
+            );
             net.RestartClientDiscoveryAfterRemoteHostFailure();
         }
         else
@@ -237,7 +240,10 @@ public sealed class ClientHostProxyMiddleware
         }
     }
 
-    private async Task<bool> TryRemoteHealthAsync(string remoteBase, CancellationToken cancellationToken)
+    private async Task<bool> TryRemoteHealthAsync(
+        string remoteBase,
+        CancellationToken cancellationToken
+    )
     {
         HttpClient client = _httpClientFactory.CreateClient("hostProxy");
         Uri healthUri = BuildHealthUri(remoteBase);
