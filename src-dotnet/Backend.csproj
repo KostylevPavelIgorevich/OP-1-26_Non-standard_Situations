@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="UdpDiscovery.Net" Version="1.2.0" />
+    <ProjectReference Include="..\DistributedLocalSystem\DistributedLocalSystem.Core.csproj" />
   </ItemGroup>
+  <!-- Вынесенная логика host/client находится в DistributedLocalSystem.Core -->
 </Project>

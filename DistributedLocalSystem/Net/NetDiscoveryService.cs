@@ -2,11 +2,11 @@ using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using Backend.Udp;
+using DistributedLocalSystem.Core.Udp;
 using Microsoft.Extensions.Options;
 using UdpDiscovery.Net;
 
-namespace Backend.Net;
+namespace DistributedLocalSystem.Core.Net;
 
 /// <summary>UDP discovery: хост — beacon, клиент — поиск хоста или <see cref="NetDiscoveryState.ClientLocalOnly"/>.</summary>
 public sealed class NetDiscoveryService : IDisposable
@@ -77,7 +77,6 @@ public sealed class NetDiscoveryService : IDisposable
             _hostAnnouncer = new ApiUdpAnnouncer(_options);
             _hostAnnouncer.StartAsync(token).GetAwaiter().GetResult();
 
-            // Нужен фоновый Task, чтобы `StopUnsafe` мог дождаться завершения.
             _runTask = Task.Run(
                 async () =>
                 {
@@ -128,7 +127,9 @@ public sealed class NetDiscoveryService : IDisposable
                         await discovery.StartAsync(token).ConfigureAwait(false);
 
                         // Слушаем до первого сообщения от хоста.
-                        DiscoveredServer server = await tcs.Task.WaitAsync(token).ConfigureAwait(false);
+                        DiscoveredServer server = await tcs
+                            .Task.WaitAsync(token)
+                            .ConfigureAwait(false);
 
                         lock (_gate)
                         {
@@ -160,7 +161,10 @@ public sealed class NetDiscoveryService : IDisposable
                 token
             );
 
-            _log.LogInformation("Net: client mode, listening UDP until host found ({AppId})", _opt.AppId);
+            _log.LogInformation(
+                "Net: client mode, listening UDP until host found ({AppId})",
+                _opt.AppId
+            );
         }
     }
 
@@ -173,31 +177,6 @@ public sealed class NetDiscoveryService : IDisposable
             _state = NetDiscoveryState.Idle;
             ClearRemotePeer();
         }
-    }
-
-    private void StartDiscovery(
-        NetDiscoveryState initialState,
-        Func<CancellationToken, Task> loopTaskFactory,
-        Action logAction
-    )
-    {
-        lock (_gate)
-        {
-            StopUnsafe();
-            _state = initialState;
-            ClearRemotePeer();
-            _thisHostIp = GetPrimaryLanIPv4();
-            _runCts = new CancellationTokenSource();
-            CancellationToken token = _runCts.Token;
-            _runTask = Task.Run(() => loopTaskFactory(token), token);
-            logAction();
-        }
-    }
-
-    private void ClearRemotePeer()
-    {
-        _remoteHostIp = null;
-        _remoteTcpPort = null;
     }
 
     private string? BuildRemoteBaseUrl()
@@ -223,6 +202,12 @@ public sealed class NetDiscoveryService : IDisposable
             baseUrl = BuildRemoteBaseUrl();
             return !string.IsNullOrEmpty(baseUrl);
         }
+    }
+
+    private void ClearRemotePeer()
+    {
+        _remoteHostIp = null;
+        _remoteTcpPort = null;
     }
 
     private void StopUnsafe()
@@ -281,138 +266,6 @@ public sealed class NetDiscoveryService : IDisposable
         _runTask = null;
     }
 
-    private BeaconMessage CreateHostBeaconMessage() =>
-        new BeaconMessage
-        {
-            App = _opt.AppId,
-            Role = "host",
-            Tcp = _opt.LanPort,
-            V = _opt.ProtocolVersion,
-        };
-
-    private async Task SendBeaconUdpAsync(UdpClient udp, byte[] payload, CancellationToken token)
-    {
-        await udp.SendAsync(
-                payload,
-                payload.Length,
-                new IPEndPoint(IPAddress.Broadcast, _opt.UdpPort)
-            )
-            .WaitAsync(token)
-            .ConfigureAwait(false);
-        await udp.SendAsync(
-                payload,
-                payload.Length,
-                new IPEndPoint(IPAddress.Loopback, _opt.UdpPort)
-            )
-            .WaitAsync(token)
-            .ConfigureAwait(false);
-    }
-
-    private async Task HostLoopAsync(CancellationToken token)
-    {
-        using UdpClient udp = new UdpClient();
-        udp.EnableBroadcast = true;
-        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(CreateHostBeaconMessage(), JsonOpts);
-
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                await SendBeaconUdpAsync(udp, payload, token).ConfigureAwait(false);
-                await Task.Delay(_opt.BeaconIntervalMs, token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex, "Net: host beacon send failed");
-                try
-                {
-                    await Task.Delay(_opt.BeaconIntervalMs, token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-        }
-    }
-
-    private bool IsValidHostBeacon(BeaconMessage? msg) =>
-        msg is not null
-        && msg.V == _opt.ProtocolVersion
-        && string.Equals(msg.App, _opt.AppId, StringComparison.Ordinal)
-        && string.Equals(msg.Role, "host", StringComparison.OrdinalIgnoreCase)
-        && msg.Tcp > 0;
-
-    private async Task ClientDiscoverAsync(CancellationToken token)
-    {
-        using UdpClient udp = new UdpClient(_opt.UdpPort);
-        using CancellationTokenSource timeout = new CancellationTokenSource(
-            _opt.DiscoveryTimeoutMs
-        );
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
-            token,
-            timeout.Token
-        );
-
-        try
-        {
-            while (!linked.IsCancellationRequested)
-            {
-                UdpReceiveResult incoming;
-                try
-                {
-                    incoming = await udp.ReceiveAsync(linked.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-
-                BeaconMessage? msg;
-                try
-                {
-                    msg = JsonSerializer.Deserialize<BeaconMessage>(incoming.Buffer, JsonOpts);
-                }
-                catch (Exception ex)
-                {
-                    _log.LogDebug(ex, "Net: bad beacon packet");
-                    continue;
-                }
-
-                if (!IsValidHostBeacon(msg))
-                    continue;
-
-                string hostIp = incoming.RemoteEndPoint.Address.ToString();
-                lock (_gate)
-                {
-                    _state = NetDiscoveryState.ClientConnected;
-                    _remoteHostIp = hostIp;
-                    _remoteTcpPort = msg!.Tcp;
-                }
-
-                _log.LogInformation("Net: host found at {Host}:{Tcp}", hostIp, msg.Tcp);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Net: client discovery error");
-        }
-
-        lock (_gate)
-        {
-            if (_state == NetDiscoveryState.ClientDiscovering)
-            {
-                _state = NetDiscoveryState.ClientLocalOnly;
-                _log.LogInformation("Net: no host, graceful degradation → clientLocalOnly");
-            }
-        }
-    }
-
     private string? GetPrimaryLanIPv4()
     {
         try
@@ -438,6 +291,5 @@ public sealed class NetDiscoveryService : IDisposable
         && !IPAddress.IsLoopback(a)
         && !a.ToString().StartsWith("169.254.", StringComparison.Ordinal);
 
-    /// <inheritdoc />
     public void Dispose() => Stop();
 }

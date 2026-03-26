@@ -1,4 +1,4 @@
-namespace Backend.Net;
+namespace DistributedLocalSystem.Core.Net;
 
 public sealed class DiscoveryOptions
 {

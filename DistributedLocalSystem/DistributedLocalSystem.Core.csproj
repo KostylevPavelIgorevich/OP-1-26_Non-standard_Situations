@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="UdpDiscovery.Net" Version="1.2.0" />
+  </ItemGroup>
+  <!-- Код UDP discovery и проксирования лежит прямо в этом проекте (без ссылок). -->
+  <!-- Собственный API расширений/DI находится в этом проекте -->
+</Project>

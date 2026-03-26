@@ -1,8 +1,8 @@
-using Backend.Net;
+using DistributedLocalSystem.Core.Net;
 using Microsoft.Extensions.Options;
 using UdpDiscovery.Net;
 
-namespace Backend.Udp;
+namespace DistributedLocalSystem.Core.Udp;
 
 public sealed class UdpDiscoveryService : IHostedService, IDisposable
 {

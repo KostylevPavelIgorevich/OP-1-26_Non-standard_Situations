@@ -1,6 +1,9 @@
 using System.Net.Http.Headers;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 
-namespace Backend.Net;
+namespace DistributedLocalSystem.Core.Net;
 
 /// <summary>
 /// В режиме клиента с найденным хостом пересылает HTTP на LAN-хост, кроме служебных путей (health, net API).
@@ -49,13 +52,47 @@ public sealed class ClientHostProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context, NetDiscoveryService net)
     {
+        // Служебные endpoints: всегда отвечаем локально (и не отдаём прокси).
+        if (context.Request.Path.StartsWithSegments("/api/net/status"))
+        {
+            var status = net.GetStatus();
+            context.Response.ContentType = "application/json";
+            var jsonOptions = context
+                .RequestServices.GetRequiredService<IOptions<JsonOptions>>()
+                .Value.SerializerOptions;
+
+            await JsonSerializer
+                .SerializeAsync(context.Response.Body, status, jsonOptions, context.RequestAborted)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        if (context.Request.Path.StartsWithSegments("/api/net/role"))
+        {
+            var status = net.GetStatus();
+            context.Response.ContentType = "application/json";
+            var jsonOptions = context
+                .RequestServices.GetRequiredService<IOptions<JsonOptions>>()
+                .Value.SerializerOptions;
+
+            await JsonSerializer
+                .SerializeAsync(
+                    context.Response.Body,
+                    new { role = status.ConfiguredRole },
+                    jsonOptions,
+                    context.RequestAborted
+                )
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (ShouldBypass(context.Request.Path))
         {
             await _next(context).ConfigureAwait(false);
             return;
         }
 
-        if (!net.TryGetHostProxyBaseUrl(out string? remoteBase))
+        if (!net.TryGetHostProxyBaseUrl(out string? remoteBase) || string.IsNullOrEmpty(remoteBase))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -83,10 +120,6 @@ public sealed class ClientHostProxyMiddleware
     internal static bool ShouldBypass(PathString path)
     {
         if (path.StartsWithSegments("/health"))
-            return true;
-        if (path.StartsWithSegments("/api/net/status"))
-            return true;
-        if (path.StartsWithSegments("/api/net/role"))
             return true;
         return false;
     }

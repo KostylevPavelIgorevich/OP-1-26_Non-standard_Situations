@@ -1,9 +1,5 @@
 using System.Net;
-using System.Net.Http;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using Backend.Net;
-using Microsoft.Extensions.Options;
+using DistributedLocalSystem.Core;
 
 static string ResolveLocalHttpUrl(string[] args)
 {
@@ -29,26 +25,7 @@ static string ResolveLocalHttpUrl(string[] args)
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<DiscoveryOptions>(
-    builder.Configuration.GetSection(DiscoveryOptions.SectionName)
-);
-builder.Services.AddSingleton<NetDiscoveryService>();
-builder.Services.AddHostedService<NetDiscoveryHostedService>();
-builder
-    .Services.AddHttpClient("hostProxy")
-    .ConfigurePrimaryHttpMessageHandler(static () =>
-        new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            UseCookies = false,
-            AutomaticDecompression = DecompressionMethods.None,
-        }
-    );
-
-builder.Services.ConfigureHttpJsonOptions(o =>
-{
-    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
-});
+builder.Services.AddDistributedLocalSystemCore(builder.Configuration);
 
 var localHttpUrl = ResolveLocalHttpUrl(args);
 var lanPort = builder.Configuration.GetValue("Net:LanPort", 17891);
@@ -61,7 +38,7 @@ builder.Services.AddCors(o =>
 
 var app = builder.Build();
 app.UseCors();
-app.UseMiddleware<ClientHostProxyMiddleware>();
+app.UseDistributedLocalSystemCoreProxy();
 
 app.MapGet(
     "/greet",
@@ -73,13 +50,5 @@ app.MapGet(
 );
 
 app.MapGet("/health", () => Results.Text("OK"));
-
-app.MapGet("/api/net/status", (NetDiscoveryService net) => Results.Json(net.GetStatus()));
-
-app.MapGet(
-    "/api/net/role",
-    (IOptions<DiscoveryOptions> opt) =>
-        Results.Json(new { role = NetRoleApi.Format(opt.Value.ParsedRole) })
-);
 
 app.Run();

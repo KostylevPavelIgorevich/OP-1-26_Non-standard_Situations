@@ -1,7 +1,7 @@
-using Backend.Net;
+using DistributedLocalSystem.Core.Net;
 using Microsoft.Extensions.Options;
 
-namespace Backend.Udp;
+namespace DistributedLocalSystem.Core.Udp;
 
 public class ApiUdpAnnouncer : IDisposable
 {
@@ -52,6 +52,7 @@ public class ApiUdpAnnouncer : IDisposable
                 }
                 catch (OperationCanceledException) { }
             }
+
             _broadcastCts.Dispose();
             _broadcastCts = null;
         }
