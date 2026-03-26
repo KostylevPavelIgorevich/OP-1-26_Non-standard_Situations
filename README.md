@@ -1,13 +1,53 @@
-# Tauri + React + .NET (backend)
+# OP-1-26 Non-standard Situations
 
-## Режимы сети (UDP discovery)
+Tauri + React UI и .NET backend с LAN-discovery (UDP) и HTTP-проксированием на найденный host.
 
-- **Хост** — шлёт UDP beacon (`app`, `role: host`, `tcp` = порт LAN-HTTP) в broadcast на порт из `Net:UdpPort` (`appsettings.json`).
-- **Клиент** — слушает тот же UDP-порт; если за `Net:DiscoveryTimeoutMs` пришёл валидный beacon — `state: clientConnected` и `remoteHostBaseUrl`; иначе **graceful degradation** — `state: clientLocalOnly`.
+## Что внутри
 
-HTTP API backend: `127.0.0.1:<случайный порт>` (задаёт Tauri) и **`http://0.0.0.0:<Net:LanPort>`** для доступа с других ПК в LAN.
+- `src` — UI на React (Tauri frontend)
+- `src-tauri` — Tauri (Rust), запускает backend-процесс и отдаёт в UI `baseUrl`
+- `src-dotnet` — ASP.NET Core backend
+- `DistributedLocalSystem` — библиотека `DistributedLocalSystem.Core` (discovery, UDP, middleware proxy)
 
-### Запуск только из консоли (без Tauri)
+## Сетевой режим
+
+Конфигурация задаётся в `src-dotnet/appsettings.json` (`Net`):
+
+- `Role`: `none | host | client`
+- `AppId`: идентификатор сервиса в UDP
+- `UdpPort`: порт discovery
+- `LanPort`: HTTP-порт для доступа по LAN
+- `DiscoveryTimeoutMs`: таймаут поиска host
+
+### Поведение ролей
+
+- `host`: шлёт UDP beacon в LAN.
+- `client`: ищет host по UDP и при успехе проксирует HTTP-запросы на него.
+- `none`: discovery не запускается.
+
+### Ограничение: только один host в LAN
+
+При старте в режиме `host` выполняется preflight-проверка discovery. Если host с тем же `AppId` уже найден в локальной сети, выбрасывается исключение и backend завершается с ошибкой запуска.
+
+### Проксирование в клиентском режиме
+
+- Таймаут запроса к удалённому host: **5 секунд**.
+- Если запрос не удался, выполняется проверка `GET /health` удалённого host.
+- Если `health` недоступен, текущий host считается потерянным и запускается повторный UDP discovery.
+
+## HTTP API
+
+Основные endpoint'ы backend:
+
+- `GET /health` — healthcheck
+- `GET /greet?name=...` — тестовый endpoint
+- `GET /api/net/role` — роль из конфигурации (`none | host | client`)
+- `GET /api/net/status` — текущее состояние discovery/подключения
+- `GET /api/Books` — тестовая коллекция книг (hardcoded)
+
+## Запуск
+
+## 1) Запуск backend из консоли
 
 Из корня репозитория:
 
@@ -16,36 +56,34 @@ cd src-dotnet
 dotnet run -- --urls http://127.0.0.1:5555
 ```
 
-Дальше API на `http://127.0.0.1:5555` (например `POST /api/net/start` с `{"mode":"host"}`).
+Backend также откроет LAN-адрес `http://0.0.0.0:<Net:LanPort>`.
 
-### Проверка на одной машине
+## 2) Запуск Tauri приложения
 
-- **UDP-порт 49152 занимает только клиент** (слушатель). Хост не биндит этот порт, только шлёт пакеты.
-- Два процесса **одновременно** в режиме **клиент** на одном ПК — нельзя (один биндинг на порт).
-- **Хост + клиент** на одном ПК — можно: хост шлёт beacon в broadcast и на **127.0.0.1** (чтобы пакет дошёл до локального клиента на той же машине).
-- Два **хоста** на одном ПК технически не конфликтуют по UDP, но смысла в обычном тесте нет.
-
-### Проверка на двух машинах
-
-1. Один ПК: в UI нажать **«Хост»** — в статусе `state: hostBeaconing`.
-2. Второй ПК в той же подсети: **«Клиент»** — через несколько секунд ожидается `state: clientConnected`, в поле `remoteHostBaseUrl` — URL хоста.
-3. При необходимости откройте в брандмауэре **UDP** и **TCP** для портов из `appsettings.json` (`UdpPort`, `LanPort`).
-
-### API
-
-| Метод | Путь | Описание |
-|--------|------|----------|
-| GET | `/api/net/status` | Поле `state`: `idle` \| `hostBeaconing` \| `clientDiscovering` \| `clientConnected` \| `clientLocalOnly` |
-| POST | `/api/net/start` | Тело `{ "mode": "host" \| "client" }` |
-| POST | `/api/net/stop` | Остановить beacon / поиск |
-
-## Запуск разработки
+Установить зависимости:
 
 ```bash
 npm install
+```
+
+Запуск dev-режима Tauri:
+
+```bash
 npm run tauri dev
 ```
 
-## IDE
+Важно: `src-tauri` ожидает переменную окружения `BACKEND_EXECUTABLE` (путь к собранному .NET backend executable), иначе backend-процесс не будет запущен из Tauri.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## UI
+
+В интерфейсе доступны:
+
+- отображение роли и статуса discovery (`/api/net/role`, `/api/net/status`)
+- кнопка **"Получить книги"** (запрос `GET /api/Books`)
+
+## Технологии
+
+- Tauri v2
+- React + TypeScript + Vite
+- ASP.NET Core (.NET 8)
+- UDP discovery (`UdpDiscovery.Net`)
